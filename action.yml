@@ -1,0 +1,48 @@
+name: "Cloudflare WARP Install"
+description: "GitHub Actions에서 Cloudflare Warp 설정"
+
+inputs:
+  stack:
+    description: "WARP 구성 선택: IPv4/IPv6만 혹은 이중 스택."
+    required: false
+    default: "dual-stack"
+
+runs:
+  using: "composite"
+  steps:
+    - name: WARP 설정
+      run: |
+        # warp+doh 모드로 WARP 구성
+        echo "Configuring WARP with mode: warp+doh."
+        sudo apt-get update && sudo apt-get install -y gnupg2 lsb-release
+        curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-warp.list
+        sudo apt-get update
+        sudo apt-get install -y cloudflare-warp
+
+        # WARP 클라이언트 등록 및 구성
+        sudo warp-cli register
+        sudo warp-cli set-mode warp+doh
+
+        # 입력에 따른 IPv4 또는 IPv6 라우트 제외 설정
+        if [ "${{ inputs.stack }}" = "ipv4" ]; then
+          echo "IPv6 라우트 제외..."
+          sudo warp-cli exclude ::/0
+        elif [ "${{ inputs.stack }}" = "ipv6" ]; then
+          echo "IPv4 라우트 제외..."
+          sudo warp-cli exclude 0.0.0.0/0
+        else
+          echo "라우트 제외 없음, 이중 스택 사용."
+        fi
+
+        # WARP 연결
+        sudo warp-cli connect
+        sleep 3  # 연결 대기시간
+
+        # 현재 IP 주소 출력
+        echo "현재 IPv4 주소:"
+        sudo curl -4s https://api64.ipify.org
+        echo "현재 IPv6 주소:"
+        sudo curl -6s https://api64.ipify.org
+
+      shell: bash
